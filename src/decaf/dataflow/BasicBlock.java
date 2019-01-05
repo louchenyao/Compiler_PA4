@@ -415,6 +415,7 @@ public class BasicBlock {
         pw.println("  liveIn  = " + toString(liveIn));
         pw.println("  liveOut = " + toString(liveOut));
 
+        pw.println("  liveDef     = " + toString(liveDef));
         pw.println("  liveUse_pairs = " + ParisToString(liveUse_pairs));
         pw.println("  liveIn_pairs  = " + ParisToString(liveIn_pairs));
         pw.println("  liveOut_pairs = " + ParisToString(liveOut_pairs));
