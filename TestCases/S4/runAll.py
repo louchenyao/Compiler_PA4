@@ -90,10 +90,21 @@ if __name__ == '__main__':
         # Check the result
         reference = read_txt_file(os.path.join('result',bname+'.result'))
         our_result = read_txt_file(os.path.join('output',bname+'.result'))
-        if du_chain_pass and reference == our_result:
-            info = 'OK :)'
+
+        if du_chain_pass:
+            info = "DU Chain: ✅️"
         else:
-            info = 'ERROR!'
+            info = "DU Chain: ❌"
+        if reference == our_result:
+            info += "   Result: ✅"
+        else:
+            info += "   Result: ❌"
+
+        # if du_chain_pass and reference == our_result:
+        #     info = 'OK :)'
+        # else:
+        #     info = 'ERROR!'
+
         print ('{0:<20}{1}'.format(name,info))
     if os.name == 'nt':
         print ('Press Enter to continue...')
