@@ -9,6 +9,30 @@ import decaf.tac.Label;
 import decaf.tac.Tac;
 import decaf.tac.Temp;
 
+class Chain {
+    Map<Temp, Set<Integer>> chain;
+
+    public Chain() {
+        chain = new TreeMap<Temp, Set<Integer>>(Temp.ID_COMPARATOR);
+    }
+
+    public Set<Integer> getChain(Temp tmp) {
+        Set<Integer> s = chain.get(tmp);
+        if (s == null) s = new TreeSet<Integer>();
+        return s;
+    }
+
+    public void add(Temp tmp, Integer pos) {
+        Set<Integer> s = getChain(tmp);
+        s.add(pos);
+        chain.put(tmp, s);
+    }
+
+    public void clear(Temp tmp) {
+        chain.put(tmp, null);
+    }
+}
+
 public class BasicBlock {
     public int bbNum;
 
@@ -44,6 +68,12 @@ public class BasicBlock {
 
     public Set<Temp> liveOut;
 
+    public Set<Temp> liveDef; // If temp be defined this blocks, then temp MUST in liveDef. I don't understand f**king def meaning in original definition.
+    public Set<Pair> liveUse_pairs;
+    public Set<Pair> liveIn_pairs;
+    public Set<Pair> liveOut_pairs;
+
+
     public Set<Temp> saves;
 
     private List<Asm> asms;
@@ -61,6 +91,12 @@ public class BasicBlock {
         liveUse = new TreeSet<Temp>(Temp.ID_COMPARATOR);
         liveIn = new TreeSet<Temp>(Temp.ID_COMPARATOR);
         liveOut = new TreeSet<Temp>(Temp.ID_COMPARATOR);
+
+        liveDef = new TreeSet<Temp>(Temp.ID_COMPARATOR);
+        liveUse_pairs = new TreeSet<Pair>(Pair.COMPARATOR);
+        liveIn_pairs = new TreeSet<Pair>(Pair.COMPARATOR);
+        liveOut_pairs = new TreeSet<Pair>(Pair.COMPARATOR);
+
         next = new int[2];
         asms = new ArrayList<Asm>();
 
@@ -91,6 +127,14 @@ public class BasicBlock {
                 case LEQ:
                 case LES:
                 /* use op1 and op2, def op0 */
+                    if (!liveDef.contains(tac.op1)) {
+                        liveUse_pairs.add(new Pair(tac.id, tac.op1));
+                    }
+                    if (!liveDef.contains(tac.op2)) {
+                        liveUse_pairs.add(new Pair(tac.id, tac.op2));
+                    }
+                    liveDef.add(tac.op0);
+
                     if (tac.op1.lastVisitedBB != bbNum) {
                         liveUse.add(tac.op1);
                         tac.op1.lastVisitedBB = bbNum;
@@ -110,6 +154,13 @@ public class BasicBlock {
                 case INDIRECT_CALL:
                 case LOAD:
 				/* use op1, def op0 */
+                    if (!liveDef.contains(tac.op1)) {
+                        liveUse_pairs.add(new Pair(tac.id, tac.op1));
+                    }
+                    if (tac.op0 != null) {
+                        liveDef.add(tac.op0);
+                    }
+
                     if (tac.op1.lastVisitedBB != bbNum) {
                         liveUse.add(tac.op1);
                         tac.op1.lastVisitedBB = bbNum;
@@ -126,6 +177,10 @@ public class BasicBlock {
                 case LOAD_STR_CONST:
                 case LOAD_IMM4:
 				/* def op0 */
+                    if (tac.op0 != null) {
+                        liveDef.add(tac.op0);
+                    }
+
                     if (tac.op0 != null && tac.op0.lastVisitedBB != bbNum) {  // in DIRECT_CALL with return type VOID,
                         // tac.op0 is null
                         def.add(tac.op0);
@@ -134,6 +189,13 @@ public class BasicBlock {
                     break;
                 case STORE:
 				/* use op0 and op1*/
+                    if (!liveDef.contains(tac.op0)) {
+                        liveUse_pairs.add(new Pair(tac.id, tac.op0));
+                    }
+                    if (!liveDef.contains(tac.op1)) {
+                        liveUse_pairs.add(new Pair(tac.id, tac.op1));
+                    }
+
                     if (tac.op0.lastVisitedBB != bbNum) {
                         liveUse.add(tac.op0);
                         tac.op0.lastVisitedBB = bbNum;
@@ -145,6 +207,10 @@ public class BasicBlock {
                     break;
                 case PARM:
 				/* use op0 */
+                    if (!liveDef.contains(tac.op0)) {
+                        liveUse_pairs.add(new Pair(tac.id, tac.op0));
+                    }
+
                     if (tac.op0.lastVisitedBB != bbNum) {
                         liveUse.add(tac.op0);
                         tac.op0.lastVisitedBB = bbNum;
@@ -155,11 +221,15 @@ public class BasicBlock {
                     break;
             }
         }
+        if (var != null && !liveDef.contains(var)) {
+            liveUse_pairs.add(new Pair(endId, var));
+        }
         if (var != null && var.lastVisitedBB != bbNum) {
             liveUse.add(var);
             var.lastVisitedBB = bbNum;
         }
         liveIn.addAll(liveUse);
+        liveIn_pairs.addAll(liveUse_pairs);
     }
 
     public void analyzeLiveness() {
@@ -227,6 +297,90 @@ public class BasicBlock {
         }
     }
 
+    public void computeDUChain() {
+        if (tacList == null) return;
+
+        Tac tac = tacList;
+        for (; tac.next != null; tac = tac.next) ;
+
+        Chain tmp_chain = new Chain();
+        for (Pair p: liveOut_pairs) {
+            tmp_chain.add(p.tmp, p.pos);
+        }
+
+        if (var != null) {
+            tmp_chain.add(var, endId);
+        }
+
+        for (; tac != null; tac = tac.prev) {
+            // System.out.println(tac.opc);
+            switch (tac.opc) {
+                case ADD:
+                case SUB:
+                case MUL:
+                case DIV:
+                case MOD:
+                case LAND:
+                case LOR:
+                case GTR:
+                case GEQ:
+                case EQU:
+                case NEQ:
+                case LEQ:
+                case LES:
+                    /* use op1 and op2, def op0 */
+                    DUChain.put(new Pair(tac.id, tac.op0), tmp_chain.getChain(tac.op0));
+                    tmp_chain.clear(tac.op0);
+
+                    tmp_chain.add(tac.op1, tac.id);
+                    tmp_chain.add(tac.op2, tac.id);
+                    break;
+                case NEG:
+                case LNOT:
+                case ASSIGN:
+                case INDIRECT_CALL:
+                case LOAD:
+                    /* use op1, def op0 */
+                    if (tac.op0 != null) {
+                        DUChain.put(new Pair(tac.id, tac.op0), tmp_chain.getChain(tac.op0));
+                        tmp_chain.clear(tac.op0);
+                    }
+
+                    tmp_chain.add(tac.op1, tac.id);
+                    break;
+                case LOAD_VTBL:
+                case DIRECT_CALL:
+                case RETURN:
+                case LOAD_STR_CONST:
+                case LOAD_IMM4:
+                    /* def op0 */
+                    if (tac.op0 != null) {
+                        // System.out.println("Set Chain " + tac.op0);
+                        DUChain.put(new Pair(tac.id, tac.op0), tmp_chain.getChain(tac.op0));
+                        tmp_chain.clear(tac.op0);
+                    }
+                    break;
+                case STORE:
+                    /* use op0 and op1*/
+                    tmp_chain.add(tac.op0, tac.id);
+                    tmp_chain.add(tac.op1, tac.id);
+                    break;
+                case BEQZ:
+                case BNEZ:
+                case PARM:
+                    /* use op0 */
+                    if (tac.op0 != null) {
+                        // System.out.println("Add " + tac.op0);
+                        tmp_chain.add(tac.op0, tac.id);
+                    }
+                    break;
+                default:
+                    /* BRANCH MEMO MARK PARM*/
+                    break;
+            }
+        }
+    }
+
     public void printTo(PrintWriter pw) {
         pw.println("BASIC BLOCK " + bbNum + " : ");
         for (Tac t = tacList; t != null; t = t.next) {
@@ -260,6 +414,11 @@ public class BasicBlock {
         pw.println("  liveUse = " + toString(liveUse));
         pw.println("  liveIn  = " + toString(liveIn));
         pw.println("  liveOut = " + toString(liveOut));
+
+        pw.println("  liveUse_pairs = " + ParisToString(liveUse_pairs));
+        pw.println("  liveIn_pairs  = " + ParisToString(liveIn_pairs));
+        pw.println("  liveOut_pairs = " + ParisToString(liveOut_pairs));
+
 
         for (Tac t = tacList; t != null; t = t.next) {
             pw.println("    " + t + " " + toString(t.liveOut));
@@ -375,6 +534,15 @@ public class BasicBlock {
         StringBuilder sb = new StringBuilder("[ ");
         for (Temp t : set) {
             sb.append(t.name + " ");
+        }
+        sb.append(']');
+        return sb.toString();
+    }
+
+    public String ParisToString(Set<Pair> pairs) {
+        StringBuilder sb = new StringBuilder("[ ");
+        for (Pair t : pairs) {
+            sb.append("(" + t.pos + ", " + t.tmp + ")" + " ");
         }
         sb.append(']');
         return sb.toString();

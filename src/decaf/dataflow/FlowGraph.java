@@ -30,6 +30,7 @@ public class FlowGraph implements Iterable<BasicBlock> {
         analyzeLiveness();
         for (BasicBlock bb : bbs) {
             bb.analyzeLiveness();
+            bb.computeDUChain();
         }
     }
 
@@ -184,14 +185,27 @@ public class FlowGraph implements Iterable<BasicBlock> {
                 for (int i = 0; i < 2; i++) {
                     if (bb.next[i] >= 0) { // Not RETURN
                         bb.liveOut.addAll(bbs.get(bb.next[i]).liveIn);
+                        bb.liveOut_pairs.addAll(bbs.get(bb.next[i]).liveIn_pairs);
                     }
                 }
+
                 bb.liveOut.removeAll(bb.def);
-                if (bb.liveIn.addAll(bb.liveOut))
-                    changed = true;
+
+                List<Pair> rm_pairs = new ArrayList<Pair>();
+                for (Pair p: bb.liveOut_pairs) {
+                    if (bb.liveDef.contains(p.tmp)) {
+                        rm_pairs.add(p);
+                    }
+                }
+                bb.liveOut_pairs.removeAll(rm_pairs);
+
+                boolean change_1 = bb.liveIn.addAll(bb.liveOut);
+                boolean change_2 = bb.liveIn_pairs.addAll(bb.liveOut_pairs);
+                changed = changed || change_1 || change_2;
                 for (int i = 0; i < 2; i++) {
                     if (bb.next[i] >= 0) { // Not RETURN
                         bb.liveOut.addAll(bbs.get(bb.next[i]).liveIn);
+                        bb.liveOut_pairs.addAll(bbs.get(bb.next[i]).liveIn_pairs);
                     }
                 }
             }

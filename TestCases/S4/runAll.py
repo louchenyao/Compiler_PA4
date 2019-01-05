@@ -92,7 +92,7 @@ if __name__ == '__main__':
         our_result = read_txt_file(os.path.join('output',bname+'.result'))
 
         if du_chain_pass:
-            info = "DU Chain: ✅️"
+            info = "DU Chain: ✅"
         else:
             info = "DU Chain: ❌"
         if reference == our_result:
